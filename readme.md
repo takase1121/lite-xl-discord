@@ -1,3 +1,8 @@
+# THIS IS A WORK IN PROGRESS
+
+Nothing will work for now - only the RPC part is complete.
+It cannot interact with Lite XL just yet.
+
 # discord rich presence for [lite-xl][1]
 Inspired by [vscode rich presence][2]
 
