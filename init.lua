@@ -6,23 +6,13 @@ local command = require "core.command"
 local RootView = require "core.rootview"
 local Object = require "core.object"
 
-local function require_rel(mod)
-    local cwd = debug.getinfo(1, "S").source:gsub("^@(.+)[\\/][^\\/]+$", "%1")
-    local old_cpath = package.cpath
-    package.cpath = cwd .. '/?.so;' .. old_cpath
-    local m = require(mod)
-    package.cpath = old_cpath
-
-    return m
-end
+local RPC = require "plugins.lite-xl-discord.rpc"
 
 local function merge(...)
     local r = {}
     for _, o in ipairs {...} do for k, v in pairs(o) do r[k] = v end end
     return r
 end
-
-local discord = require_rel "discord"
 
 -- some rules for placeholders:
 -- %f - filename
@@ -33,7 +23,7 @@ local discord = require_rel "discord"
 -- %W - workspace path
 -- %.n where n is a number - nth function after the string
 -- %% DOES NOT NEED TO BE ESCAPED.
-local default_config = {
+config.plugins.discord_rpc = {
     application_id = "839231973289492541",
     editing_details = "Editing %f",
     idle_details = "Idling",
@@ -44,8 +34,6 @@ local default_config = {
     autoconnect = true,
     reconnect = 5
 }
-
-local rpc_config = merge({}, default_config, config.discord_rpc or {})
 
 
 local function replace_placeholders(data, placeholders)
@@ -72,26 +60,16 @@ function Discord:new()
     self.error = false
     self.placeholders = {}
 
-    core.add_thread(function()
-        while true do
-            coroutine.yield(config.project_scan_rate)
-            discord.poll()
+    self.discord = RPC(
+        config.plugins.discord_rpc.application_id,
+        config.plugins.discord_rpc.reconnect
+    )
 
-            local time = system.get_time()
-            if self.running then
-                if time - self.last_activity >= rpc_config.idle_timeout then
-                    self.idle = true
-                    self:update()
-                end
-            else
-                if not self.error
-                    and type(rpc_config.reconnect) == "number"
-                    and time - self.disconnect >= rpc_config.reconnect then
-                    self:start()
-                end
-            end
-        end
-    end)
+    local discord_on_ready = self.discord.on_ready
+    function self.discord:on_ready()
+        discord_on_ready()
+        self:update()
+    end
 end
 
 function Discord:update_placeholders()
@@ -126,12 +104,12 @@ function Discord:update()
     self.placeholders
     )
 
-    discord.update({
+    self.rpc:set_activity {
         state = state,
         details = details,
         large_image = "lite-xl",
         start_time = self.start
-    })
+    }
 end
 
 function Discord:verify_config()
@@ -187,15 +165,6 @@ local rpc = Discord()
 
 
 -- function replacements
-
--- unless one day they finally decided that autoreloading user module is not a good idea
--- this will be required since user expects their config to automagically update
-local load_user_directory = core.load_user_directory
-function core.load_user_directory()
-    load_user_directory()
-    rpc_config = merge({}, default_config, config.discord_rpc or {})
-end
-
 local on_quit_project = core.on_quit_project
 function core.on_quit_project(...)
     rpc:stop()
